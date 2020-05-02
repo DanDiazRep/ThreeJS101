@@ -2,24 +2,13 @@
 import * as THREE from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/build/three.module.js';
 import { TrackballControls } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/controls/TrackballControls.js';
 import { OrbitControls } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/controls/OrbitControls.js';
-import { FBXLoader } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/loaders/FBXLoader.js';
+import { GLTFLoader } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/loaders/GLTFLoader.js';
 import { DDSLoader } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/loaders/DDSLoader.js';
 import { PMREMGenerator } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/pmrem/PMREMGenerator.js';
 import { PMREMCubeUVPacker } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/pmrem/PMREMCubeUVPacker.js';
 import { GUI } from 'https://threejsfundamentals.org/threejs/resources/threejs/r110/examples/jsm/libs/dat.gui.module.js';
 
-function httpGet(requestedWebPage) {
-
-    var xmlHttp = new XMLHttpRequest();
-    xmlHttp.open("GET", requestedWebPage, false); // false for synchronous request
-    xmlHttp.send();
-    if (xmlHttp.readyState == 4 && xmlHttp.status == 200)
-        return xmlHttp.responseText;
-}
-var id = 41;
-var data = httpGet("https://servexusinc.com/api/Model/GetAllInfo/" + id);
-var productData = JSON.parse(data);
-console.log(productData);
+var defaultLayers = ["Arms2", "Back1", "BackHolder1", "Base", "Casters", "Config", "Seat", "SeatHolder"];
 
 var artifactCanvas = document.getElementById('artifactCanvas');
 
@@ -29,12 +18,15 @@ var camera, scene, renderer, light;
 var clock = new THREE.Clock();
 var mixer;
 var bulbLight, bulbMat, hemiLight, stats;
+var meshes;
 
 var params = {
     shadows: true,
     exposure: 0.55,
     bulbPower: 6,
-    hemiIrradiance: 18
+    hemiIrradiance: 18,
+    metalness: 0.55,
+    roughness: 0.55,
 };
 
 
@@ -45,7 +37,7 @@ function init() {
 
     container = document.createElement('div');
     document.body.appendChild(container);
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 20000);
     camera.position.set(100, 100, 300);
 
     scene = new THREE.Scene();
@@ -60,7 +52,7 @@ function init() {
         color: 0x000000
     });
     bulbLight.add(new THREE.Mesh(bulbGeometry, bulbMat));
-    bulbLight.position.set(0, 250, 0);
+    bulbLight.position.set(0, 50, 0);
     bulbLight.castShadow = true;
     scene.add(bulbLight);
 
@@ -76,7 +68,7 @@ function init() {
     var grid = new THREE.GridHelper(2000, 20, 0x000000, 0x000000);
     grid.material.opacity = 0.2;
     grid.material.transparent = true;
-    //scene.add(grid);
+    scene.add(grid);
     // model
 
 
@@ -99,57 +91,91 @@ function init() {
             pmremCubeUVPacker.dispose();
         });
     cubeMapTexture.exposure = 1;
-   
-    var fbxLoader = new FBXLoader();
 
-    fbxLoader.load('public/models/Vero.fbx', function (object) {
-        var childMaterial = [new THREE.MeshStandardMaterial()];
-        var numberOfLayers = 0;
-        object.traverse(function (child) {
-            if (child.isMesh) {
-                child.castShadow = true;
-                child.receiveShadow = true;
+    var loader = new GLTFLoader();
+    loader.load('public/models/roswell.glb', function (object) {
+        meshes = object.scene.children[0];
+        
+        scene.add(object.scene);
+        object.scene.children[0].position.set(1, 75, 1);
+        for (var i = 0; i < object.scene.children[0].children.length; i++) {
+            //Scale
+            object.scene.children[0].children[i].scale.set(0.1, 0.1, 0.1);
+            //Materials
+            object.scene.children[0].children[i].children[0].material.envMap = cubeMapTexture
+            object.scene.children[0].children[i].children[0].material.metalness = 1;
+            object.scene.children[0].children[i].children[0].material.roughness = 1;
+            console.log(object.scene.children[0].children[0].children[0].material);
+            //shadow casting
+            object.scene.children[0].children[i].children[0].castShadow = true;
+            object.scene.children[0].children[i].children[0].receiveShadow = true;
+            //hide layers
+            if (!defaultLayers.includes(object.scene.children[0].children[i].name)) {
+                object.scene.children[0].children[i].visible = false;
             }
-            if (child.name != "") {
-                child.visible = productData.DefaultLayers.includes(child.name);
+            if (object.scene.children[0].children[i].name.includes("Casters")) {
+                object.scene.children[0].children[i].children[0].material.metalness = 1;
+                object.scene.children[0].children[i].children[0].material.roughness = 0;
 
-                console.log(child.name + ": " + child.visible);
-
-                var loader = new THREE.TextureLoader();
-
-               
-                childMaterial[numberOfLayers] = new THREE.MeshStandardMaterial({
-                    map: loader.load('/public/textures/three_vero/' + child.name + '/BaseColor.jpg'),
-                    bumpMap: loader.load('/public/textures/three_vero/' + child.name + '/Height.jpg'),
-                    metalnessMap: loader.load('/public/textures/three_vero/' + child.name + '/Metallic.jpg'),
-                    normalMap: loader.load('/public/textures/three_vero/' + child.name + '/Normal.jpg'),
-                    roughnessMap: loader.load('/public/textures/three_vero/' + child.name + '/Roughness.jpg'),
-                    aoMap: loader.load('/public/textures/three_vero/' + child.name + '/AO.jpg'),
-                    envMap: cubeMapTexture, 
-                    metalness: 0,
-                    roughness: 1,
-
-                });
-                if (child.name.includes("Base")) {
-                    childMaterial[numberOfLayers].metalness = 0.4;
-                    childMaterial[numberOfLayers].roughness = 0.3;
-                            }
-                
-                childMaterial[numberOfLayers].map.wrapS = THREE.RepeatWrapping;
-                childMaterial[numberOfLayers].roughnessMap.wrapS = THREE.RepeatWrapping;
-                childMaterial[numberOfLayers].metalnessMap.wrapS = THREE.RepeatWrapping;
-                childMaterial[numberOfLayers].normalMap.wrapS = THREE.RepeatWrapping;
-
-
-
-                child.material = childMaterial[numberOfLayers];
-                numberOfLayers++;
             }
-        });
-        scene.add(object);
-        console.log(object);
+        }
+        //object.scene.children[0].children[0].scale.set(100, 100, 100);
+        //scene.add(object.scene.children[0].children[0]);
+        
+
 
     });
+    //render();
+    //var fbxLoader = new FBXLoader();
+
+    //fbxLoader.load('public/models/Vero.fbx', function (object) {
+    //    var childMaterial = [new THREE.MeshStandardMaterial()];
+    //    var numberOfLayers = 0;
+    //    object.traverse(function (child) {
+    //        if (child.isMesh) {
+    //            child.castShadow = true;
+    //            child.receiveShadow = true;
+    //        }
+    //        if (child.name != "") {
+    //            child.visible = productData.DefaultLayers.includes(child.name);
+
+    //            console.log(child.name + ": " + child.visible);
+
+    //            var loader = new THREE.TextureLoader();
+
+               
+    //            childMaterial[numberOfLayers] = new THREE.MeshStandardMaterial({
+    //                map: loader.load('/public/textures/three_vero/' + child.name + '/BaseColor.jpg'),
+    //                bumpMap: loader.load('/public/textures/three_vero/' + child.name + '/Height.jpg'),
+    //                metalnessMap: loader.load('/public/textures/three_vero/' + child.name + '/Metallic.jpg'),
+    //                normalMap: loader.load('/public/textures/three_vero/' + child.name + '/Normal.jpg'),
+    //                roughnessMap: loader.load('/public/textures/three_vero/' + child.name + '/Roughness.jpg'),
+    //                aoMap: loader.load('/public/textures/three_vero/' + child.name + '/AO.jpg'),
+    //                envMap: cubeMapTexture, 
+    //                metalness: 0,
+    //                roughness: 1,
+
+    //            });
+    //            if (child.name.includes("Base")) {
+    //                childMaterial[numberOfLayers].metalness = 0.4;
+    //                childMaterial[numberOfLayers].roughness = 0.3;
+    //                        }
+                
+    //            childMaterial[numberOfLayers].map.wrapS = THREE.RepeatWrapping;
+    //            childMaterial[numberOfLayers].roughnessMap.wrapS = THREE.RepeatWrapping;
+    //            childMaterial[numberOfLayers].metalnessMap.wrapS = THREE.RepeatWrapping;
+    //            childMaterial[numberOfLayers].normalMap.wrapS = THREE.RepeatWrapping;
+
+
+
+    //            child.material = childMaterial[numberOfLayers];
+    //            numberOfLayers++;
+    //        }
+    //    });
+    //    scene.add(object);
+    //    console.log(object);
+
+    //});
 
 
     renderer = new THREE.WebGLRenderer({ canvas: artifactCanvas, antialias: true });
@@ -170,6 +196,8 @@ function init() {
     gui.add(params, 'hemiIrradiance', 10, 30);
     gui.add(params, 'bulbPower', 0, 200);
     gui.add(params, 'exposure', 0, 1);
+    gui.add(params, 'metalness', 0, 1);
+    gui.add(params, 'roughness', 0, 1);
     gui.add(params, 'shadows');
     gui.open();
 
@@ -205,5 +233,13 @@ function render() {
     hemiLight.intensity = params.hemiIrradiance;
     var time = Date.now() * 0.0005;
     //bulbLight.position.y = Math.cos(time) * 0.75 + 1.25;
+    if (meshes)
+    for (var i = 0; i < meshes.children.length; i++) {
+
+        meshes.children[i].children[0].material.metalness = params.metalness;
+        meshes.children[i].children[0].material.roughness = params.roughness;
+    }
+
+
     renderer.render(scene, camera);
 }
